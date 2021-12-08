@@ -13,7 +13,8 @@
         "yiisoft/yii2": "*",
         "yiisoft/yii2-redis": "^2.0",
         "alan/yii2-crontab": "^1.0",
-        "ext-json": "*"
+        "ext-json": "*",
+        "promphp/prometheus_client_php:":"^2.4.0"
     },
     "require-dev": {
         "phpunit/phpunit": "<7"
