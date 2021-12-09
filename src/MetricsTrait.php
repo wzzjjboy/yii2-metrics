@@ -27,7 +27,7 @@ trait MetricsTrait
                     'host' => $redisHost,
                     'port' => $redisPort ?: 6379,
                     'password' => $redisPassword,
-                    'timeout' => 0.1, // in seconds
+                    'timeout' => 1, // in seconds
                     'read_timeout' => '10', // in seconds
                     'persistent_connections' => false
                 ]
@@ -69,25 +69,6 @@ trait MetricsTrait
         ];
     }
 
-    public function fillIpControllerBehavior(&$behaviors)
-    {
-        $behaviors['metrics_access'] = [
-            'class' => AccessControl::class,
-            'only' => ['index'],
-            'rules' => [
-                [
-                    'ips' => [ '127.0.0.1'],//这里填写允许访问的IP
-                    'allow' => false,
-                ],
-            ],
-            'denyCallback' => function($rule, $action){
-                pr($rule,1);
-            }
-        ];
-    }
-
-
-
     public function getBaseMetrics()
     {
         return [
@@ -114,5 +95,27 @@ trait MetricsTrait
         }
 
         return filter_var($ip, FILTER_VALIDATE_IP) ?: '127.0.0.1';
+    }
+
+    /**
+     * 增加ip白名单
+     * @param $behaviors
+     * @param array $ips
+     */
+    public function fillIpControllerBehavior(&$behaviors, $ips = ['*'])
+    {
+        $behaviors['metrics_access'] = [
+            'class' => AccessControl::class,
+            'only' => ['index'],
+            'rules' => [
+                [
+                    'ips' => $ips,//这里填写允许访问的IP
+                    'allow' => true,
+                ],
+            ],
+            'denyCallback' => function($rule, $action){
+                throw new NotFoundHttpException();
+            }
+        ];
     }
 }
