@@ -6,6 +6,7 @@ namespace yii2\metrics;
 
 use Prometheus\Storage\Redis;
 use Yii;
+use yii\filters\AccessControl;
 use yii\redis\Connection;
 use Prometheus\RenderTextFormat;
 use yii2\metrics\filters\MetricsFilter;
@@ -66,6 +67,25 @@ trait MetricsTrait
             'appName' => $appName,
         ];
     }
+
+    public function fillIpControllerBehavior(&$behaviors)
+    {
+        $behaviors['metrics_access'] = [
+            'class' => AccessControl::class,
+            'only' => ['index'],
+            'rules' => [
+                [
+                    'ips' => [ '127.0.0.1'],//这里填写允许访问的IP
+                    'allow' => false,
+                ],
+            ],
+            'denyCallback' => function($rule, $action){
+                pr($rule,1);
+            }
+        ];
+    }
+
+
 
     public function getBaseMetrics()
     {
