@@ -1,128 +1,121 @@
 <?php
 
 
-namespace yii2\metrics\filters;
+namespace yii2\metrics;
 
 
+use Prometheus\Storage\Redis;
 use Yii;
-use Closure;
-use yii\base\Action;
-use yii\web\Request;
-use yii\web\Response;
-use yii\base\ActionFilter;
-use yii2\metrics\MetricsTrait;
-use yii\base\InvalidConfigException;
+use yii\filters\AccessControl;
+use yii\redis\Connection;
+use Prometheus\RenderTextFormat;
+use yii\web\NotFoundHttpException;
+use yii2\metrics\filters\MetricsFilter;
 
-class MetricsFilter extends ActionFilter
+trait MetricsTrait
 {
-    use MetricsTrait;
-
-    /**
-     * @var Request
-     */
-    private $request;
-    /**
-     * @var Response
-     */
-    private $response;
-    /**
-     * @var mixed
-     */
-    private $user;
-    /**
-     * @var float
-     */
-    private $startAt;
-
-    /**
-     * @var string 应用名
-     */
-    public $appName;
-
-    /**
-     * {@inheritdoc}
-     */
-    public function init()
+    public function initRedis()
     {
-        if (empty($this->appName)) {
-            throw new InvalidConfigException("appName is empty...");
+        $redis = Yii::$app->get("redis");
+        if ($redis instanceof Connection) {
+            $redisHost = $redis->hostname;
+            $redisPort = $redis->port;
+            $redisPassword = $redis->password;
+            Redis::setPrefix(sprintf("%s_%s_%s_", "PROMETHEUS", strtoupper(YII_APP_NAME), strtoupper(Yii::$app->id)));
+            \Prometheus\Storage\Redis::setDefaultOptions(
+                [
+                    'host' => $redisHost,
+                    'port' => $redisPort ?: 6379,
+                    'password' => $redisPassword,
+                    'timeout' => 0.1, // in seconds
+                    'read_timeout' => '10', // in seconds
+                    'persistent_connections' => false
+                ]
+            );
         }
-        if ($this->request === null) {
-            $this->request = Yii::$app->getRequest();
-        }
-        if ($this->response === null) {
-            $this->response = Yii::$app->getResponse();
-        }
+    }
 
+    public function actionIndex()
+    {
         $this->initRedis();
-    }
-
-    /**
-     * {@inheritdoc}
-     * @param Action $action
-     * @throws \Throwable
-     */
-    public function beforeAction($action)
-    {
-        $this->startAt = microtime(true);
-
-        if ($this->user === null && Yii::$app->getUser()) {
-            $this->user = Yii::$app->getUser()->getIdentity(false);
-        }
-        if ($this->user instanceof Closure) {
-            $this->user = call_user_func($this->user, $action);
-        }
-        Yii::debug('before save metrics', __METHOD__);
-
-        return true;
-    }
-
-    /**
-     * This method is invoked right after an action is executed.
-     * You may override this method to do some postprocessing for the action.
-     * @param Action $action the action just executed.
-     * @param mixed $result the action execution result
-     * @return mixed the processed action result.
-     * @throws \Prometheus\Exception\MetricsRegistrationException
-     */
-    public function afterAction($action, $result)
-    {
         $registry = \Prometheus\CollectorRegistry::getDefault();
-        $registry
-            ->getOrRegisterHistogram($this->getNamespace(), $this->getName(), $this->getHelp(), array_keys($this->getLabels()))
-            ->observe(microtime(true) - $this->startAt, $this->getLabels());
-        return $result;
+        $renderer = new RenderTextFormat();
+        $result = $renderer->render($registry->getMetricFamilySamples());
+        header('Content-type: ' . RenderTextFormat::MIME_TYPE);
+        echo $result;
+        exit(0);
     }
 
-    private function getNamespace(): string
+    public function actionTs()
     {
-        return sprintf('%s_%s', strtolower(YII_APP_NAME), strtolower(str_replace('-', '_', Yii::$app->id)));
+        /** @var Connection $redis */
+        $redis = Yii::$app->redis;
+        $redis->select(0);
+        $cursor = 0;
+        do {
+            list($cursor, $keys) = $redis->scan($cursor, 'MATCH',  'PROMETHEUS_*');
+            $cursor = (int) $cursor;
+            if (!empty($keys)) {
+                $redis->executeCommand('DEL', $keys);
+            }
+        } while ($cursor !== 0);
     }
 
-    private function getName(): string
+    public function fillMetricsBehavior(&$behaviors, $appName = YII_APP_NAME)
     {
-        return 'http_requests';
+        $behaviors['metrics'] = [
+            'class' => MetricsFilter::class,
+            'appName' => $appName,
+        ];
     }
 
-    private function getHelp(): string
+    public function getBaseMetrics()
     {
-        return 'http requests histogram!';
+        return [
+            'hostname'       => gethostname(),
+            'instance'       => sprintf("%s:80", $this->getServerIp()),
+            'ip'             => $this->getServerIp(),
+        ];
     }
 
-    private function getLabels(): array
+    /**
+     * Get current server ip.
+     *
+     * @return string
+     */
+    private function getServerIp(): string
     {
-        $labels = array_merge([
-            'request_status' => $this->response->statusCode,
-            'request_path'   => $this->request->getPathInfo(),
-            'request_method' => $this->request->method,
+        if (!empty($_SERVER['SERVER_ADDR'])) {
+            $ip = $_SERVER['SERVER_ADDR'];
+        } elseif (!empty($_SERVER['SERVER_NAME'])) {
+            $ip = gethostbyname($_SERVER['SERVER_NAME']);
+        } else {
+            // for php-cli(phpunit etc.)
+            $ip = defined('PHPUNIT_RUNNING') ? '127.0.0.1' : gethostbyname(gethostname());
+        }
 
-        ], $this->getBaseMetrics());
-        Yii::debug(["metrics labels" => $labels], __METHOD__);
-        return $labels;
+        return filter_var($ip, FILTER_VALIDATE_IP) ?: '127.0.0.1';
     }
 
-    private function getBuckets(): array
+    /**
+     * 增加ip白名单
+     * @param $behaviors
+     * @param array $ips
+     */
+    public function fillIpControllerBehavior(&$behaviors, $ips = ['*'])
     {
-        return [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 2.0, 5.0, 10.0, 20.0];
+        $behaviors['metrics_access'] = [
+            'class' => AccessControl::class,
+            'only' => ['index'],
+            'rules' => [
+                [
+                    'ips' => $ips,//这里填写允许访问的IP
+                    'allow' => true,
+                ],
+            ],
+            'denyCallback' => function($rule, $action){
+                throw new NotFoundHttpException();
+            }
+        ];
     }
 }

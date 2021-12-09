@@ -115,26 +115,4 @@ trait MetricsTrait
 
         return filter_var($ip, FILTER_VALIDATE_IP) ?: '127.0.0.1';
     }
-
-    /**
-     * 增加ip白名单
-     * @param $behaviors
-     * @param array $ips
-     */
-    public function fillIpControllerBehavior(&$behaviors, $ips = ['*'])
-    {
-        $behaviors['metrics_access'] = [
-            'class' => AccessControl::class,
-            'only' => ['index'],
-            'rules' => [
-                [
-                    'ips' => $ips,//这里填写允许访问的IP
-                    'allow' => true,
-                ],
-            ],
-            'denyCallback' => function($rule, $action){
-                throw new NotFoundHttpException();
-            }
-        ];
-    }
 }
