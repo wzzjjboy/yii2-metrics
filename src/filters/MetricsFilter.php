@@ -7,24 +7,19 @@ namespace yii2\metrics\filters;
 use Yii;
 use Closure;
 use yii\base\Action;
-use yii\web\Request;
-use yii\web\Response;
+use yii\base\Application;
+use yii\base\Behavior;
+use yii\base\Component;
+use yii\console\Request;
+use yii\console\Response;
 use yii\base\ActionFilter;
 use yii2\metrics\MetricsTrait;
 use yii\base\InvalidConfigException;
 
-class MetricsFilter extends ActionFilter
+class MetricsFilter extends Behavior
 {
     use MetricsTrait;
 
-    /**
-     * @var Request
-     */
-    private $request;
-    /**
-     * @var Response
-     */
-    private $response;
     /**
      * @var mixed
      */
@@ -39,6 +34,13 @@ class MetricsFilter extends ActionFilter
      */
     public $appName;
 
+    public function events()
+    {
+        return [
+            Application::EVENT_BEFORE_REQUEST => 'beforeAction',
+        ];
+    }
+
     /**
      * {@inheritdoc}
      */
@@ -47,51 +49,41 @@ class MetricsFilter extends ActionFilter
         if (empty($this->appName)) {
             throw new InvalidConfigException("appName is empty...");
         }
-        if ($this->request === null) {
-            $this->request = Yii::$app->getRequest();
-        }
-        if ($this->response === null) {
-            $this->response = Yii::$app->getResponse();
-        }
+    }
 
-        $this->initRedis();
+    /**
+     * @return yii\web\Request|\Swoole\Http\Request
+     */
+    private function getRequest()
+    {
+        return Yii::$app->getRequest();
+    }
+
+    /**
+     * @return yii\web\Response|\yii\console\Response
+     */
+    private function getResponse()
+    {
+        return Yii::$app->getResponse();
     }
 
     /**
      * {@inheritdoc}
-     * @param Action $action
      * @throws \Throwable
      */
-    public function beforeAction($action)
+    public function beforeAction()
     {
         $this->startAt = microtime(true);
-
-        if ($this->user === null && Yii::$app->getUser()) {
-            $this->user = Yii::$app->getUser()->getIdentity(false);
-        }
-        if ($this->user instanceof Closure) {
-            $this->user = call_user_func($this->user, $action);
-        }
-        Yii::debug('before save metrics', __METHOD__);
-
-        return true;
+        register_shutdown_function([$this, 'afterAction']);
     }
 
-    /**
-     * This method is invoked right after an action is executed.
-     * You may override this method to do some postprocessing for the action.
-     * @param Action $action the action just executed.
-     * @param mixed $result the action execution result
-     * @return mixed the processed action result.
-     * @throws \Prometheus\Exception\MetricsRegistrationException
-     */
-    public function afterAction($action, $result)
+    public function afterAction()
     {
+        $this->initRedis();
         $registry = \Prometheus\CollectorRegistry::getDefault();
         $registry
             ->getOrRegisterHistogram($this->getNamespace(), $this->getName(), $this->getHelp(), array_keys($this->getLabels()))
             ->observe(microtime(true) - $this->startAt, $this->getLabels());
-        return $result;
     }
 
     private function getNamespace(): string
@@ -111,10 +103,23 @@ class MetricsFilter extends ActionFilter
 
     private function getLabels(): array
     {
+        if ($this->getResponse() instanceof Response) {
+            $statusCode = $this->getResponse()->exitStatus;
+        } else {
+            $statusCode = $this->getResponse()->statusCode;
+        }
+        if ($this->getRequest() instanceof Request) {
+            list($route, $params) = $this->getRequest()->resolve();
+            $request_path = $route;
+            $request_method = $route;
+        } else {
+            $request_path = $this->getRequest()->getPathInfo();
+            $request_method = $this->getRequest()->method;
+        }
         $labels = array_merge([
-            'request_status' => $this->response->statusCode,
-            'request_path'   => $this->request->getPathInfo(),
-            'request_method' => $this->request->method,
+            'request_status' => $statusCode,
+            'request_path'   => $request_path,
+            'request_method' => $request_method,
 
         ], $this->getBaseMetrics());
         Yii::debug(["metrics labels" => $labels], __METHOD__);

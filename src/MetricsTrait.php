@@ -46,30 +46,30 @@ trait MetricsTrait
         exit(0);
     }
 
-    public function actionTs()
-    {
-        /** @var Connection $redis */
-        $redis = Yii::$app->redis;
-        $redis->select(0);
-        $cursor = 0;
-        do {
-            list($cursor, $keys) = $redis->scan($cursor, 'MATCH',  'PROMETHEUS_*');
-            $cursor = (int) $cursor;
-            if (!empty($keys)) {
-                $redis->executeCommand('DEL', $keys);
-            }
-        } while ($cursor !== 0);
-    }
+//    public function actionTs()
+//    {
+//        /** @var Connection $redis */
+//        $redis = Yii::$app->redis;
+//        $redis->select(0);
+//        $cursor = 0;
+//        do {
+//            list($cursor, $keys) = $redis->scan($cursor, 'MATCH',  'PROMETHEUS_*');
+//            $cursor = (int) $cursor;
+//            if (!empty($keys)) {
+//                $redis->executeCommand('DEL', $keys);
+//            }
+//        } while ($cursor !== 0);
+//    }
 
-    public function fillMetricsBehavior(&$behaviors, $appName = YII_APP_NAME)
-    {
-        $behaviors['metrics'] = [
-            'class' => MetricsFilter::class,
-            'appName' => $appName,
-        ];
-    }
+//    public function fillMetricsBehavior(&$behaviors, $appName = YII_APP_NAME)
+//    {
+//        $behaviors['metrics'] = [
+//            'class' => MetricsFilter::class,
+//            'appName' => $appName,
+//        ];
+//    }
 
-    public function getBaseMetrics()
+    protected function getBaseMetrics()
     {
         return [
             'hostname'       => gethostname(),

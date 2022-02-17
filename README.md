@@ -10,22 +10,19 @@
 defined('YII_APP_NAME') or define('YII_APP_NAME', 'myYiiApplication');
 ```
 
-2. 在基类里面引入MetricsTrait, 该Trait提供了设置Behavior的快捷方法
+2. 在主配置文件里面定义行为 建设配置在common/config/main.php
 
 ```php
 <?php
-use yii\rest\Controller;
-use yii2\metrics\MetricsTrait;
-class CommonController extends Controller {
-     use MetricsTrait;
-     
-     public function behaviors()
-    {
-        $behaviors = parent::behaviors();
-        $this->fillMetricsBehavior($behaviors);
-        return $behaviors;
-    }
-}
+    return [
+    'as metrics' => [
+        'class' => yii2\metrics\filters\MetricsFilter::class,
+        'appName' => YII_APP_NAME,
+    ],
+    'components' => [
+        // 其它组件的配置
+    ],
+];
 ```
 
 3. 添加支持/metrics路由
