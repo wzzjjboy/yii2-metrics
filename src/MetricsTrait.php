@@ -4,16 +4,47 @@
 namespace yii2\metrics;
 
 
-use Prometheus\Storage\Redis;
 use Yii;
+use Prometheus\Storage\Redis;
 use yii\filters\AccessControl;
 use yii\redis\Connection;
 use Prometheus\RenderTextFormat;
 use yii\web\NotFoundHttpException;
-use yii2\metrics\filters\MetricsFilter;
 
 trait MetricsTrait
 {
+    private $application;
+
+    private $modulesName;
+
+    /**
+     * @param string $application
+     */
+    public function setApplication($application): void
+    {
+        $this->application = $application;
+    }
+
+    /**
+     * @param string $modulesName
+     */
+    public function setModulesName($modulesName): void
+    {
+        $this->modulesName = $modulesName;
+    }
+
+    private function getPrefix ()
+    {
+        if (is_null($this->application)) {
+            $this->application = YII_APP_NAME;
+        }
+        if (is_null($this->modulesName)) {
+            $this->modulesName = Yii::$app->id;
+        }
+
+        return sprintf("%s_%s_%s", "PROMETHEUS", strtoupper($this->application), strtoupper($this->modulesName));
+    }
+
     public function initRedis()
     {
         $redis = Yii::$app->get("redis");
@@ -21,7 +52,7 @@ trait MetricsTrait
             $redisHost = $redis->hostname;
             $redisPort = $redis->port;
             $redisPassword = $redis->password;
-            Redis::setPrefix(sprintf("%s_%s_%s_", "PROMETHEUS", strtoupper(YII_APP_NAME), strtoupper(Yii::$app->id)));
+            Redis::setPrefix($this->getPrefix());
             \Prometheus\Storage\Redis::setDefaultOptions(
                 [
                     'host' => $redisHost,
@@ -35,7 +66,13 @@ trait MetricsTrait
         }
     }
 
+
     public function actionIndex()
+    {
+        $this->getMetrics();
+    }
+
+    protected function getMetrics()
     {
         $this->initRedis();
         $registry = \Prometheus\CollectorRegistry::getDefault();
@@ -46,28 +83,6 @@ trait MetricsTrait
         exit(0);
     }
 
-//    public function actionTs()
-//    {
-//        /** @var Connection $redis */
-//        $redis = Yii::$app->redis;
-//        $redis->select(0);
-//        $cursor = 0;
-//        do {
-//            list($cursor, $keys) = $redis->scan($cursor, 'MATCH',  'PROMETHEUS_*');
-//            $cursor = (int) $cursor;
-//            if (!empty($keys)) {
-//                $redis->executeCommand('DEL', $keys);
-//            }
-//        } while ($cursor !== 0);
-//    }
-
-//    public function fillMetricsBehavior(&$behaviors, $appName = YII_APP_NAME)
-//    {
-//        $behaviors['metrics'] = [
-//            'class' => MetricsFilter::class,
-//            'appName' => $appName,
-//        ];
-//    }
 
     protected function getBaseMetrics()
     {
