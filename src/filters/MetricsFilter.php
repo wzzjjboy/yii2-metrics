@@ -96,7 +96,7 @@ class MetricsFilter extends Behavior
                 'duration_ms',
                 'http server requests duration(ms).',
                 ['path'],
-                [100, 250, 500, 1000, 1500, 2000, 2500, 3000]
+                [25, 50, 100, 250, 500, 1000, 1500, 2000, 3000]
             )
             ->observe($this->getMillisecond() - $this->startAt, ['path' => $path]);
     }
